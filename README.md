@@ -1,3 +1,4 @@
+![Imgur](https://imgur.com/oXGegKe.png)
 # Tasty Haste Plugin - UE4 Editor Mode for Rapid Mesh Placement
 
 **Tasty Haste** is a Custom Unreal Engine 4 Editor Mode that allows you to place, scale, and rotate repeated meshes with a single mouse click, and without having to drag and drop every mesh/actor.  
