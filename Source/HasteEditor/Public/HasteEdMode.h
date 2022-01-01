@@ -2,6 +2,7 @@
 
 #pragma once
 #include "EdMode.h"
+#include "Toolkits/ToolkitManager.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogHasteMode, Log, All);
 
@@ -100,7 +101,7 @@ public:
 	virtual bool AllowWidgetMove();
 	virtual bool ShouldDrawWidget() const override;
 	virtual bool UsesTransformWidget() const override;
-	virtual EAxisList::Type GetWidgetAxisToDraw(FWidget::EWidgetMode InWidgetMode) const override;
+	virtual EAxisList::Type GetWidgetAxisToDraw(UE::Widget::EWidgetMode InWidgetMode) const override;
 
 	virtual bool DisallowMouseDeltaTracking() const override;
 
@@ -140,6 +141,8 @@ private:
 	UStaticMesh* DefaultBrushMesh;
 	UStaticMeshComponent* BrushMeshComponent;
 
+	FVector HasteStretch(FEditorViewportClient* ViewportClient, int32 MouseX, int32 MouseY);
+
 	FVector LastHitImpact;
 
 	bool bToolActive;
@@ -151,4 +154,20 @@ private:
 	FDelegateHandle ContentBrowserSelectionChangeDelegate;
 
 	class UHasteEdModeSettings* UISettings;
+
+	float biasedRoundDown(float input, float bias);
+	float biasedRoundUp(float input, float bias);
+
+
+	FVector hardCam;
+	FVector camMoveVec;
+	FRotator hardRot;
+	float stretchSpeed = .25f;
+	FIntVector CurrentMousePosition1;
+	AActor* hitActor;
+
+	int scrollTicks = 0;
+
+
+	bool HasteTrace(UWorld* InWorld, FHitResult& OutHit, FVector InStart, FVector InEnd, FName InTraceTag, bool InbReturnFaceIndex);
 };

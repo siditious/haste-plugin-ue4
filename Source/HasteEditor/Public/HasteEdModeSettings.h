@@ -8,13 +8,16 @@ class UHasteEdModeSettings : public UObject {
 	GENERATED_UCLASS_BODY()
 
 public:
-
+	
 	/** Rules to transform your object when it is placed in the map */
+	/*
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Instanced, SimpleDisplay, Category = Haste)
 	TArray<UHasteTransformLogic*> Transformers;
-
+	*/
 
 	/** Lets you emit your own markers into the scene */
+	/*
 	UPROPERTY(EditAnywhere, Category = Haste)
 	bool bRotateOnScroll;
+	*/
 };

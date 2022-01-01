@@ -1,6 +1,7 @@
 // Copyright 2015-2016 Code Respawn Technologies. MIT License
-#include "HasteEditorPrivatePCH.h"
 #include "HasteTransformLogicRandomZ.h"
+#include "HasteEditorPrivatePCH.h"
+
 
 void UHasteTransformLogicRandomZ::TransformObject_Implementation(const FTransform& CurrentTransform, FTransform& Offset)
 {

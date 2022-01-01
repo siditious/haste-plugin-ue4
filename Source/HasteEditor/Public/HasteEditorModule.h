@@ -3,8 +3,15 @@
 #pragma once
 
 #include "UnrealEd.h"
-#include "ModuleManager.h"
-#include "ModuleInterface.h"
+#include "AssetToolsModule.h"
+#include "PropertyEditorModule.h"
+#include "LevelEditor.h"
+#include "LevelEditorActions.h"
+
+#include "Modules/ModuleManager.h"
+#include "Interfaces/IPluginManager.h"
+#include "HasteEdMode.h"
+#include "Modules/ModuleInterface.h"
 
 
 /**
@@ -36,4 +43,20 @@ public:
 		return FModuleManager::Get().IsModuleLoaded( "HasteEditorModule" );
 	}
 };
+
+class FHasteEditorModule : public IHasteEditorModule
+{
+public:
+	/** IModuleInterface implementation */
+	virtual void StartupModule() override;
+
+
+	virtual void ShutdownModule() override;
+
+	static TSharedPtr< class FSlateStyleSet > StyleSet;
+
+	void RegisterStyleSet();
+};
+
+
 

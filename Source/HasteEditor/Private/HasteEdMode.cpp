@@ -1,17 +1,20 @@
 // Copyright 2015-2016 Code Respawn Technologies. MIT License
 
-#include "HasteEditorPrivatePCH.h"
 #include "HasteEdMode.h"
+#include "HasteEditorPrivatePCH.h"
+
 #include "UnrealEd.h"
 #include "StaticMeshResources.h"
 #include "ObjectTools.h"
 #include "ScopedTransaction.h"
 
-#include "ModuleManager.h"
+#include "Modules/ModuleManager.h"
+
 #include "Editor/LevelEditor/Public/LevelEditor.h"
 #include "Toolkits/ToolkitManager.h"
 
 #include "Runtime/AssetRegistry/Public/AssetRegistryModule.h"
+#include "UnrealWidget.h"
 
 //Slate dependencies
 #include "Editor/LevelEditor/Public/LevelEditor.h"
@@ -111,7 +114,7 @@ void FEdModeHaste::Enter()
 	const bool bRememberCurrentState = true;
 	ForceRealTimeViewports(bWantRealTime, bRememberCurrentState);
 
-
+	/*
 	if (!Toolkit.IsValid())
 	{
 		TSharedPtr<FHasteEdModeToolkit> HasteToolkit = MakeShareable(new FHasteEdModeToolkit);
@@ -121,6 +124,10 @@ void FEdModeHaste::Enter()
 		Toolkit = HasteToolkit;
 		Toolkit->Init(Owner->GetToolkitHost());
 	}
+	*/
+	FEditorViewportClient* client = (FEditorViewportClient*)(GEditor->GetActiveViewport()->GetClient());
+	hardCam = client->GetViewLocation();
+	hardRot = client->GetViewRotation();
 
 	// Listen for asset selection change events in the content browser
 	{
@@ -214,6 +221,16 @@ bool FEdModeHaste::DisallowMouseDeltaTracking() const
 	return bToolActive;
 }
 
+float FEdModeHaste::biasedRoundDown(float input, float bias) {
+	float result=std::fabs(std::floor(input + bias));
+	return (input < 0.0) ? -result : result;
+}
+
+float FEdModeHaste::biasedRoundUp(float input, float bias) {
+	float result = std::fabs(std::ceil(input - bias));
+	return (input < 0.0) ? -result : result;
+}
+
 /** FEdMode: Called once per frame */
 void FEdModeHaste::Tick(FEditorViewportClient* ViewportClient, float DeltaTime)
 {
@@ -224,31 +241,60 @@ void FEdModeHaste::Tick(FEditorViewportClient* ViewportClient, float DeltaTime)
 
 	FEdMode::Tick(ViewportClient, DeltaTime);
 
+	ViewportClient->SetViewLocation(hardCam);
+
+	float axisLock=GEditor->GetRotGridSize().Yaw;
+	FRotator delta = (ViewportClient->GetViewRotation() - hardRot);
+	hardRot = hardRot + delta;
+	FRotator tempRot = hardRot;
+	if (delta.Yaw>0) tempRot.Yaw = biasedRoundDown(tempRot.Yaw / axisLock, (1.0f-1.0f/axisLock)*.8f)*axisLock;
+	else tempRot.Yaw = biasedRoundUp(tempRot.Yaw / axisLock, (1.0f - 1.0f / axisLock)*.8f)*axisLock;
+	if (delta.Pitch > 0) tempRot.Pitch = biasedRoundDown(tempRot.Pitch / axisLock, (1.0f - 1.0f / axisLock)*.8f)*axisLock;
+	else tempRot.Pitch = biasedRoundUp(tempRot.Pitch / axisLock, (1.0f - 1.0f / axisLock)*.8f)*axisLock;
+	tempRot.Roll = 0.0f;
+	ViewportClient->SetViewRotation(tempRot);
+
 	// Trace the brush
-	HasteBrushTrace(ViewportClient, LastMousePosition.X, LastMousePosition.Y);
+	
+		HasteBrushTrace(ViewportClient, LastMousePosition.X, LastMousePosition.Y);
 
 
-	// Update the position and size of the brush component
-	if (bBrushTraceValid)
-	{
-		// Scale adjustment is due to default sphere SM size.
-		BrushMeshComponent->SetRelativeTransform(BrushCursorTransform);
-
-		if (!BrushMeshComponent->IsRegistered())
+		// Update the position and size of the brush component
+		if (bBrushTraceValid)
 		{
-			BrushMeshComponent->RegisterComponentWithWorld(ViewportClient->GetWorld());
+			// Scale adjustment is due to default sphere SM size.
+			BrushMeshComponent->SetRelativeTransform(BrushCursorTransform);
+
+			if (!BrushMeshComponent->IsRegistered())
+			{
+				BrushMeshComponent->RegisterComponentWithWorld(ViewportClient->GetWorld());
+			}
 		}
-	}
-	else
-	{
-		if (BrushMeshComponent->IsRegistered())
+		else
 		{
-			BrushMeshComponent->UnregisterComponent();
+			if (BrushMeshComponent->IsRegistered())
+			{
+				BrushMeshComponent->UnregisterComponent();
+			}
 		}
-	}
+
+		FRotator viewRot = ViewportClient->GetViewRotation();
+		FRotator sideViewRot = viewRot + FRotator(0.0f, 90.0f, 0.0f);
+		FVector view = viewRot.Vector();
+		FVector sideView = sideViewRot.Vector();
+		float camSpeed = ViewportClient->GetCameraSpeed();
+		if (ViewportClient->Viewport->KeyState(EKeys::W)) hardCam = (hardCam + FVector(view.X*camSpeed, view.Y*camSpeed, 0.0f));
+		if (ViewportClient->Viewport->KeyState(EKeys::S)) hardCam = (hardCam - FVector(view.X*camSpeed, view.Y*camSpeed, 0.0f));
+		
+		if (ViewportClient->Viewport->KeyState(EKeys::A)) hardCam = (hardCam - FVector(sideView.X*camSpeed, sideView.Y*camSpeed, 0.0f));
+		if (ViewportClient->Viewport->KeyState(EKeys::D)) hardCam = (hardCam + FVector(sideView.X*camSpeed, sideView.Y*camSpeed, 0.0f));
+
+		if (ViewportClient->Viewport->KeyState(EKeys::Q)) hardCam = (hardCam + FVector(0.0f, 0.0f, -camSpeed));
+		if (ViewportClient->Viewport->KeyState(EKeys::E)) hardCam = (hardCam + FVector(0.0f, 0.0f, camSpeed));
+
 }
 
-static bool HasteTrace(UWorld* InWorld, FHitResult& OutHit, FVector InStart, FVector InEnd, FName InTraceTag, bool InbReturnFaceIndex = false)
+bool FEdModeHaste::HasteTrace(UWorld* InWorld, FHitResult& OutHit, FVector InStart, FVector InEnd, FName InTraceTag, bool InbReturnFaceIndex = false)
 {
 	FCollisionQueryParams QueryParams(InTraceTag, true);
 	QueryParams.bReturnFaceIndex = InbReturnFaceIndex;
@@ -259,11 +305,12 @@ static bool HasteTrace(UWorld* InWorld, FHitResult& OutHit, FVector InStart, FVe
 		bResult = InWorld->LineTraceSingleByChannel(OutHit, InStart, InEnd, ECC_WorldStatic, QueryParams);
 		if (bResult)
 		{
+			AActor* Actor = OutHit.GetActor();
+			hitActor = Actor;
 			// In the editor traces can hit "No Collision" type actors, so ugh.
 			FBodyInstance* BodyInstance = OutHit.Component->GetBodyInstance();
 			if (BodyInstance->GetCollisionEnabled() != ECollisionEnabled::QueryAndPhysics || BodyInstance->GetResponseToChannel(ECC_WorldStatic) != ECR_Block)
 			{
-				AActor* Actor = OutHit.Actor.Get();
 				if (Actor)
 				{
 					QueryParams.AddIgnoredActor(Actor);
@@ -335,6 +382,33 @@ void FEdModeHaste::HasteBrushTrace(FEditorViewportClient* ViewportClient, int32 
 	}
 }
 
+FVector FEdModeHaste::HasteStretch(FEditorViewportClient* ViewportClient, int32 MouseX, int32 MouseY) {
+	
+		// Compute a world space ray from the screen space mouse coordinates
+		FSceneViewFamilyContext ViewFamily(FSceneViewFamily::ConstructionValues(
+			ViewportClient->Viewport,
+			ViewportClient->GetScene(),
+			ViewportClient->EngineShowFlags)
+			.SetRealtimeUpdate(ViewportClient->IsRealtime()));
+		FSceneView* View = ViewportClient->CalcSceneView(&ViewFamily);
+		FViewportCursorLocation MouseViewportRay(View, ViewportClient, MouseX, MouseY);
+
+		FVector Start = MouseViewportRay.GetOrigin();
+		FVector tempDirection = MouseViewportRay.GetDirection();
+		FVector End = Start + WORLD_MAX * tempDirection;
+
+		FHitResult Hit;
+		UWorld* World = ViewportClient->GetWorld();
+		static FName NAME_HasteBrush = FName(TEXT("HasteBrush"));
+		if (HasteTrace(World, Hit, Start, End, NAME_HasteBrush))
+		{
+			// Adjust the sphere brush
+			return PerformLocationSnap(Hit.Location);
+
+		}
+	return FVector(0);
+}
+
 float SnapRotation(float Value, float SnapWidth) {
 	return FMath::RoundToInt(Value / SnapWidth) * SnapWidth;
 }
@@ -344,13 +418,13 @@ void FEdModeHaste::UpdateBrushRotation()
 	BrushRotation = FQuat::FindBetween(FVector(0, 0, 1), LastHitImpact);
 
 	// Append the brush rotation
-	if (UISettings->bRotateOnScroll) {
+	
 		float RotSnapWidth = GEditor->GetRotGridSize().Yaw;
 		float SnappedOffsetX = SnapRotation(RotationOffset.X, RotSnapWidth);
 		float SnappedOffsetY = SnapRotation(RotationOffset.Y, RotSnapWidth);
 		float SnappedOffsetZ = SnapRotation(RotationOffset.Z, RotSnapWidth);
 		BrushRotation = BrushRotation * FQuat(FVector(0, 0, 1), SnappedOffsetZ * PI / 180.0f);
-	}
+	
 }
 
 
@@ -389,10 +463,10 @@ bool FEdModeHaste::MouseMove(FEditorViewportClient* ViewportClient, FViewport* V
  */
 bool FEdModeHaste::CapturedMouseMove(FEditorViewportClient* ViewportClient, FViewport* Viewport, int32 MouseX, int32 MouseY)
 {
-	FIntVector CurrentMousePosition(MouseX, MouseY, 0);
-	if (LastMousePosition != CurrentMousePosition && !bMeshRotating) {
+	CurrentMousePosition1=FIntVector(MouseX, MouseY, 0);
+	if (LastMousePosition != CurrentMousePosition1 && !bMeshRotating) {
 		//UE_LOG(LogHasteMode, Log, TEXT("CapturedMouseMove (%d, %d)"), MouseX, MouseY);
-		LastMousePosition = CurrentMousePosition;
+		LastMousePosition = CurrentMousePosition1;
 		//HasteBrushTrace(ViewportClient, MouseX, MouseY);
 		return bBrushTraceValid;
 	}
@@ -431,6 +505,34 @@ void FEdModeHaste::ApplyBrush(FEditorViewportClient* ViewportClient)
 bool FEdModeHaste::InputKey(FEditorViewportClient* ViewportClient, FViewport* Viewport, FKey Key, EInputEvent Event)
 {
 	// Rotate if mouse wheel is scrolled
+	if (Key == EKeys::X) BrushScale = FVector(1);
+
+	if (Key == EKeys::RightMouseButton && Event == EInputEvent::IE_DoubleClick) hitActor->Destroy();
+
+	if (Key == EKeys::LeftMouseButton && Event == EInputEvent::IE_Released)
+	{
+		bMeshRotating = false;
+		scrollTicks = 0;
+		if (ActiveBrushMesh) {
+			AStaticMeshActor* MeshActor = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass());
+
+			// Rename the display name of the new actor in the editor to reflect the mesh that is being created from.
+			FActorLabelUtilities::SetActorLabelUnique(MeshActor, ActiveBrushMesh->GetName());
+
+			MeshActor->GetStaticMeshComponent()->SetStaticMesh(ActiveBrushMesh);
+			MeshActor->ReregisterAllComponents();
+			MeshActor->SetActorTransform(BrushCursorTransform);
+
+			// Switch to another mesh from the list
+			BrushRotation = FQuat::Identity;
+			RotationOffset = FVector::ZeroVector;
+			UpdateBrushRotation();
+			ResetBrushMesh();
+
+			BrushScale = FVector(1);
+		}
+	}
+
 	if (Key == EKeys::MouseScrollUp || Key == EKeys::MouseScrollDown) {
 		int32 WheelDelta = (Key == EKeys::MouseScrollUp) ? 1 : -1;
 		const float ScrollSpeed = 1;
@@ -442,13 +544,20 @@ bool FEdModeHaste::InputKey(FEditorViewportClient* ViewportClient, FViewport* Vi
 			RotationOffset.X += AngleDelta;
 		} 
 		else if (bShiftDown) {
-			RotationOffset.Y += AngleDelta;
+			RotationOffset.Z += AngleDelta;
 		} 
 		else {
-			RotationOffset.Z += AngleDelta;
+			if (WheelDelta>0) scrollTicks++;
+			else scrollTicks--;
+			float gridSize=GEditor->GetGridSize();
+			if (ActiveBrushMesh) {
+				FBox BoxExtent = ActiveBrushMesh->GetExtendedBounds().GetBox();
+				BrushScale.Z = float(scrollTicks)*gridSize*.5 / FMath::Abs(BoxExtent.Max.Y - BoxExtent.Min.Y);
+			}
 		}
 		return true;
 	}
+	
 	return false;
 }
 
@@ -493,10 +602,11 @@ void FEdModeHaste::ActorSelectionChangeNotify()
 void FEdModeHaste::ForceRealTimeViewports(const bool bEnable, const bool bStoreCurrentState)
 {
 	FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>("LevelEditor");
-	TSharedPtr< ILevelViewport > ViewportWindow = LevelEditorModule.GetFirstActiveViewport();
+	TSharedPtr< IAssetViewport > ViewportWindow = LevelEditorModule.GetFirstActiveViewport();
 	if (ViewportWindow.IsValid())
 	{
-		FEditorViewportClient &Viewport = ViewportWindow->GetLevelViewportClient();
+		//Cast<SLevelViewport>(ViewportWindow.Get());
+		FEditorViewportClient &Viewport = StaticCastSharedPtr<SLevelViewport>(ViewportWindow)->GetLevelViewportClient();
 		if (Viewport.IsPerspective())
 		{
 			if (bEnable)
@@ -515,35 +625,14 @@ void FEdModeHaste::ForceRealTimeViewports(const bool bEnable, const bool bStoreC
 
 bool FEdModeHaste::HandleClick(FEditorViewportClient* InViewportClient, HHitProxy *HitProxy, const FViewportClick &Click)
 {
-	if (ActiveBrushMesh && !bMeshRotating) {
-		AStaticMeshActor* MeshActor = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass());
 
-		// Rename the display name of the new actor in the editor to reflect the mesh that is being created from.
-		FActorLabelUtilities::SetActorLabelUnique(MeshActor, ActiveBrushMesh->GetName());
-
-		MeshActor->GetStaticMeshComponent()->SetStaticMesh(ActiveBrushMesh);
-		MeshActor->ReregisterAllComponents();
-		MeshActor->SetActorTransform(BrushCursorTransform);
-
-		// Switch to another mesh from the list
-		ResetBrushMesh();
-	}
-
-	return FEdMode::HandleClick(InViewportClient, HitProxy, Click);
+	//return FEdMode::HandleClick(InViewportClient, HitProxy, Click);
+	return true;
 }
 
 FTransform FEdModeHaste::ApplyTransformers(const FTransform& BaseTransform)
 {
 	FTransform Transform = BaseTransform;
-
-	if (UISettings) {
-		for (UHasteTransformLogic* TransformLogic : UISettings->Transformers) {
-			if (!TransformLogic) continue;
-			FTransform Offset;
-			TransformLogic->TransformObject(Transform, Offset);
-			Transform = Offset * Transform;
-		}
-	}
 
 	return Transform;
 }
@@ -556,7 +645,7 @@ FVector FEdModeHaste::GetWidgetLocation() const
 /** FEdMode: Called when a mouse button is pressed */
 bool FEdModeHaste::StartTracking(FEditorViewportClient* InViewportClient, FViewport* InViewport)
 {
-	bMeshRotating = IsCtrlDown(InViewport) || IsShiftDown(InViewport);
+	bMeshRotating = true;
 
 	return FEdMode::StartTracking(InViewportClient, InViewport);
 }
@@ -564,7 +653,6 @@ bool FEdModeHaste::StartTracking(FEditorViewportClient* InViewportClient, FViewp
 /** FEdMode: Called when the a mouse button is released */
 bool FEdModeHaste::EndTracking(FEditorViewportClient* InViewportClient, FViewport* InViewport)
 {
-	bMeshRotating = false;
 
 	return FEdMode::EndTracking(InViewportClient, InViewport);
 }
@@ -572,22 +660,31 @@ bool FEdModeHaste::EndTracking(FEditorViewportClient* InViewportClient, FViewpor
 /** FEdMode: Called when mouse drag input it applied */
 bool FEdModeHaste::InputDelta(FEditorViewportClient* InViewportClient, FViewport* InViewport, FVector& InDrag, FRotator& InRot, FVector& InScale)
 {
-	if (bMeshRotating) {
-		bool bShiftDown = IsShiftDown(InViewport);
-		bool bCtrlDown = IsCtrlDown(InViewport);
+	if (InViewportClient->Viewport->KeyState(EKeys::LeftMouseButton)) {
+		if (bMeshRotating) {
+			bool bShiftDown = IsShiftDown(InViewport);
+			bool bCtrlDown = IsCtrlDown(InViewport);
 
-		float AngleDelta = FMath::Sign(InDrag.X) * ROTATION_SPEED;
-		if (bShiftDown && bCtrlDown) {
-			RotationOffset.Y += AngleDelta;
+			if (bShiftDown) {
+				//RotationOffset.Z += AngleDelta;
+				//scale in Z-dir here
+			}
+			//its woooooorkiinngg
+			FVector stretchVector = HasteStretch(InViewportClient, CurrentMousePosition1.X, CurrentMousePosition1.Y);
+			if (ActiveBrushMesh) {
+				FBox BoxExtent = ActiveBrushMesh->GetExtendedBounds().GetBox();
+				BrushScale.Y = -(BrushLocation.Y - stretchVector.Y) / FMath::Abs(BoxExtent.Max.Y - BoxExtent.Min.Y);
+				BrushScale.X = -(BrushLocation.X - stretchVector.X) / FMath::Abs(BoxExtent.Max.X - BoxExtent.Min.X);
+			}
+
+			return true;
 		}
-		else if (bShiftDown) {
-			RotationOffset.Z += AngleDelta;
-		}
-		else if (bCtrlDown) {
-			RotationOffset.X += AngleDelta;
-		}
-		UpdateBrushRotation();
-		return true;
+	}
+	else if (InViewportClient->Viewport->KeyState(EKeys::RightMouseButton)) {
+		float axisLock = GEditor->GetRotGridSize().Yaw;
+		hardRot.Yaw += InDrag.X*axisLock*.1;
+		hardRot.Pitch += InDrag.Y*axisLock*3.0f;
+		//hardRot.Pitch += InDrag.Z*axisLock*2.0f;
 	}
 	return FEdMode::InputDelta(InViewportClient, InViewport, InDrag, InRot, InScale);
 }
@@ -607,13 +704,13 @@ bool FEdModeHaste::ShouldDrawWidget() const
 	return true;
 }
 
-EAxisList::Type FEdModeHaste::GetWidgetAxisToDraw(FWidget::EWidgetMode InWidgetMode) const
+EAxisList::Type FEdModeHaste::GetWidgetAxisToDraw(UE::Widget::EWidgetMode InWidgetMode) const
 {
 	switch (InWidgetMode)
 	{
-	case FWidget::WM_Translate:
-	case FWidget::WM_Rotate:
-	case FWidget::WM_Scale:
+	case UE::Widget::WM_Translate:
+	case UE::Widget::WM_Rotate:
+	case UE::Widget::WM_Scale:
 		return EAxisList::XYZ;
 	default:
 		return EAxisList::None;

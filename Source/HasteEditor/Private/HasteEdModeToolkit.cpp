@@ -1,9 +1,10 @@
 // Copyright 2015-2016 Code Respawn Technologies. MIT License
-#include "HasteEditorPrivatePCH.h"
 #include "HasteEdModeToolkit.h"
+#include "HasteEditorPrivatePCH.h"
+
 #include "HasteEdMode.h"
 #include "PropertyEditorModule.h"
-#include "ModuleManager.h"
+#include "Modules/ModuleManager.h"
 #include "IDetailsView.h"
 
 #define LOCTEXT_NAMESPACE "HasteEditMode"

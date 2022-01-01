@@ -1,12 +1,13 @@
 {
 	"FileVersion" : 3,
 	
-	"FriendlyName" : "Haste",
-	"Version" : 14,
+	"FriendlyName" : "Tasty Haste",
+	"Version" : 20,
 	"VersionName" : "1.1.3",
-	"CreatedBy" : "Ali Akbar Vathi",
+	"CreatedBy" : "Ali Akbar Vathi/Sid",
 	"CreatedByURL" : "http://coderespawn.com",
-	"EngineVersion" : "4.14.0",
+	"CanContainContent" : "true",
+	"EngineVersion" : "5.0.0",
 	"Description" : "Quickly place meshes all over your scene with point and click",
 	"Category" : "Productivity",
 	"EnabledByDefault" : true,
@@ -15,7 +16,8 @@
 	[
 		{
 			"Name" : "HasteEditor",
-			"Type" : "Editor"
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	]
 }
